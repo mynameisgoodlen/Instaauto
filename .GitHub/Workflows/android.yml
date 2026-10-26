@@ -1,4 +1,9 @@
-name: Android CI
+name: Build Android App
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
 
 on:
   push:
