@@ -29,13 +29,11 @@ jobs:
 
           PROJECT_DIR="$GITHUB_WORKSPACE"
 
-          # Prefer a complete Android project already present in the repository root.
           if [ ! -f "$PROJECT_DIR/settings.gradle" ] && [ ! -f "$PROJECT_DIR/settings.gradle.kts" ]; then
             SOURCE_ZIP="$GITHUB_WORKSPACE/instagram-autoreactor-github-ready.zip"
 
             if [ ! -f "$SOURCE_ZIP" ]; then
-              echo "::error::Android project files are missing. Either upload the contents of the supplied project ZIP to the repository root, or upload the file instagram-autoreactor-github-ready.zip to the repository root."
-              echo "Files currently at the repository root:"
+              echo "::error::Android project files are missing. Upload instagram-autoreactor-github-ready.zip to the repository root, or commit the extracted project files."
               find "$GITHUB_WORKSPACE" -maxdepth 3 -type f -not -path '*/.git/*' | sort | sed -n '1,100p'
               exit 1
             fi
@@ -57,7 +55,7 @@ jobs:
             exit 1
           fi
           if [ ! -f "$PROJECT_DIR/app/build.gradle" ] && [ ! -f "$PROJECT_DIR/app/build.gradle.kts" ]; then
-            echo "::error::app/build.gradle is missing. The project must contain an app module."
+            echo "::error::app/build.gradle is missing."
             exit 1
           fi
 
@@ -77,13 +75,45 @@ jobs:
           log-accepted-android-sdk-licenses: false
 
       - name: Install Android SDK packages
-        run: sdkmanager --install "platforms;android-37" "build-tools;36.0.0"
+        run: sdkmanager --install "platforms;android-36" "build-tools;36.0.0"
 
       - name: Set up Gradle 9.6.0
         uses: gradle/actions/setup-gradle@v6
         with:
           gradle-version: '9.6.0'
           cache-provider: basic
+
+      - name: Configure the project to use the available Android SDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os
+          import re
+          from pathlib import Path
+
+          project = Path(os.environ["PROJECT_DIR"])
+          candidates = [project / "app" / "build.gradle", project / "app" / "build.gradle.kts"]
+          build_file = next((p for p in candidates if p.is_file()), None)
+          if build_file is None:
+              raise SystemExit("ERROR: app/build.gradle or app/build.gradle.kts not found")
+
+          original = build_file.read_text(encoding="utf-8")
+          updated, changes = re.subn(
+              r"(?m)^(\s*compileSdk\s*(?:=\s*)?)37(\s*)$",
+              r"\g<1>36\g<2>",
+              original,
+          )
+          if changes:
+              build_file.write_text(updated, encoding="utf-8")
+              print(f"Changed compileSdk 37 to 36 in {build_file}")
+          else:
+              print(f"No compileSdk 37 declaration to change in {build_file}")
+          print("Build configuration:")
+          for line in build_file.read_text(encoding="utf-8").splitlines():
+              if "compileSdk" in line or "targetSdk" in line or "minSdk" in line:
+                  print(line.strip())
+          PY
 
       - name: Build debug APK
         shell: bash
